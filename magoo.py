@@ -17,10 +17,42 @@ parser.add_argument('-H','--headers', type=str, required=True, help='Readable fi
 parser.add_argument('-T','--target', type=str, required=True, help='Readable file with multiple URLs previously validated')
 args = parser.parse_args()
 
-def bot_telegram(bot_message,bot_token,bot_id):
-    send_text = 'https://api.telegram.org/bot'+bot_token+'/sendMessage?chat_id='+bot_id+'&parse_mode=Markdown&text='+bot_message
-    response = requests.get(send_text)
-    return response
+def escape_markdown_v2(text: str) -> str:
+    """
+    Escapa caracteres especiales para Telegram parse_mode=MarkdownV2.
+    Referencia rápida: Telegram MarkdownV2 requiere escapar varios símbolos.
+    """
+    if text is None:
+        return ""
+    # Importante: primero escapar backslash
+    text = text.replace("\\", "\\\\")
+    # Caracteres a escapar en MarkdownV2
+    for ch in ["_", "*", "[", "]", "(", ")", "~", "`", ">", "#", "+", "-", "=", "|", "{", "}", ".", "!"]:
+        text = text.replace(ch, f"\\{ch}")
+    return text
+
+
+def bot_telegram(bot_message, bot_token, bot_id):
+    """
+    Envía mensaje a Telegram de forma más segura/estable:
+    - POST (no GET)
+    - Sin querystring manual
+    - timeout
+    - Escape para MarkdownV2
+    """
+    try:
+        url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
+        payload = {
+            "chat_id": bot_id,
+            "text": escape_markdown_v2(bot_message),
+            "parse_mode": "MarkdownV2",
+            "disable_web_page_preview": True,
+        }
+        # timeout corto para que no congele el scan si Telegram está lento
+        return requests.post(url, json=payload, timeout=5)
+    except Exception:
+        # No tumbar el scan si Telegram falla
+        return None
 def stderr_log(target,e):
     log = open('stderr_log_ssrf.txt', 'a')
     log.write('[-] Unexpected error with this URL: '+target+' Error: '+e+'\n')
