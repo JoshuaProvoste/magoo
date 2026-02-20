@@ -236,7 +236,7 @@ def main():
         target_list = [x.strip() for x in f if x.strip()]
 
     # dedupe (por si hay repetidos/variantes)
-    headers_to_fuzz = dedupe_headers_case_insensitive(forwarded_headers)
+    headers_to_fuzz = forwarded_headers
 
     verify_tls = True if args.verify else False  # default = False (insecure), como antes
 
