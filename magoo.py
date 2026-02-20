@@ -120,9 +120,11 @@ def run_scan(
     bot_token, bot_id,
     target_list, forwarded_headers, base_headers,
     payload, custom, timeout, verify_tls,
-    fast_threshold, slow_threshold
+    fast_threshold, slow_threshold,
+    proxies=None
 ):
     """
+    - Soporta proxies SOCKS (Tor) si proxies != None
     - NO pisa 'Host' si ya viene en base_headers (archivo)
     - Payload:
         * si payload no es None -> literal
@@ -130,6 +132,10 @@ def run_scan(
         * else -> "fake.tld"
     """
     with requests.Session() as session:
+        if proxies:
+            session.proxies.update(proxies)
+            session.trust_env = False  # ignora proxies del entorno
+
         for target in target_list:
             for ssrf in forwarded_headers:
                 try:
@@ -224,6 +230,9 @@ def main():
     parser.add_argument('--payload', type=str, default=None, help='Literal payload value to inject (overrides --custom)')
     parser.add_argument('--custom', type=str, default=None, help='Custom domain/ip to build <host>@<custom> from base Host header')
 
+    # Tor SOCKS opcional (host:port o URL completa socks5h://host:port)
+    parser.add_argument('--tor', type=str, default=None, help='Tor SOCKS proxy as host:port (e.g. 127.0.0.1:9050) or full URL (socks5h://127.0.0.1:9050)')
+
     tls_group = parser.add_mutually_exclusive_group()
     tls_group.add_argument('--verify', action='store_true', help='(Deprecated) TLS verification is enabled by default')
     tls_group.add_argument('--insecure', action='store_true', help='Disable TLS certificate verification')
@@ -245,6 +254,13 @@ def main():
     if not verify_tls:
         requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
 
+    # Proxies opcionales (Tor)
+    proxies = None
+    if args.tor:
+        tor = args.tor.strip()
+        proxy_url = tor if "://" in tor else f"socks5h://{tor}"
+        proxies = {"http": proxy_url, "https": proxy_url}
+
     file_headers_dict = load_headers_from_file(args.headers)
 
     with open(args.target, 'r', encoding='utf-8', errors='replace') as f:
@@ -256,7 +272,8 @@ def main():
         bot_token, bot_id,
         target_list, headers_to_fuzz, file_headers_dict,
         args.payload, args.custom, args.timeout, verify_tls,
-        args.fast_threshold, args.slow_threshold
+        args.fast_threshold, args.slow_threshold,
+        proxies
     )
 
     print('[+] Scan finished. Good bye!')
