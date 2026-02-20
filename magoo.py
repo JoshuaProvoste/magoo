@@ -58,6 +58,62 @@ def load_headers_from_file(headers_path: str) -> dict:
 
     return headers
 
+def run_scan(bot_token, bot_id, target_list, forwarded_headers, base_headers):
+    """
+    Ejecuta el escaneo sin mutar el dict global de headers.
+    En cada request crea un dict nuevo: headers = base_headers.copy()
+    """
+    for target in target_list:
+        for ssrf in forwarded_headers:
+            try:
+                headers = base_headers.copy()
+                headers['Host'] = target.split('/')[2]
+                headers['Referer'] = target
+                headers[ssrf] = 'fake.tld'
+
+                r = requests.get(
+                    url=target,
+                    headers=headers,
+                    verify=False,
+                    allow_redirects=False,
+                    timeout=5
+                )
+
+                status_code = str(r.status_code)
+
+                if status_code == '429':
+                    print('[-] Rate limit exception. Good bye!')
+                    bot_telegram('[-] Scan aborted by 429 Rate limit.', bot_token, bot_id)
+                    exit()
+                elif status_code[0] == '2':
+                    pass
+                elif status_code[0] == '3':
+                    pass
+                elif status_code[0] == '4':
+                    pass
+                else:
+                    stdout_log(status_code, ssrf, target)
+                    bot_telegram('[+] Status: '+status_code+' Header: '+ssrf+' URL: '+target, bot_token, bot_id)
+
+            except KeyboardInterrupt:
+                print('Good bye!')
+                exit()
+            except requests.exceptions.Timeout as e:
+                e = str(e)
+                stderr_log(target, e)
+                bot_telegram('[-] Unexpected error: ' + e, bot_token, bot_id)
+                pass
+            except requests.exceptions.InvalidURL as e:
+                e = str(e)
+                stderr_log(target, e)
+                bot_telegram('[-] Unexpected error: ' + e, bot_token, bot_id)
+                pass
+            except Exception as e:
+                e = str(e)
+                stderr_log(target, e)
+                bot_telegram('[-] Unexpected error: ' + e, bot_token, bot_id)
+                pass
+
 bot_token = os.environ.get('bot_token')
 bot_id = os.environ.get('bot_id')
 
@@ -69,50 +125,10 @@ target_list = open(args.target,'r').readlines()
 target_list = [x.strip() for x in target_list]
 
 if (bot_token != None and bot_id != None):
-    for target in target_list:
-        for ssrf in forwarded_headers:
-            try:
-                file_headers_dict.update({'Host': target.split('/')[2]})
-                file_headers_dict.update({'Referer': target})
-                file_headers_dict.update({ssrf: 'fake.tld'})
-                r = requests.get(url=target,headers=file_headers_dict,verify=False,allow_redirects=False,timeout=5)
-                del file_headers_dict[ssrf]
-                status_code = str(r.status_code)
-                if status_code == '429':
-                    print('[-] Rate limit exception. Good bye!')
-                    bot_telegram('[-] Scan aborted by 429 Rate limit.',bot_token,bot_id)
-                    exit()
-                elif status_code[0] == '2':
-                    pass
-                elif status_code[0] == '3':
-                    pass
-                elif status_code[0] == '4':
-                    pass
-                else:
-                    stdout_log(status_code,ssrf,target)
-                    bot_telegram('[+] Status: '+status_code+' Header: '+ssrf+' URL: '+target,bot_token,bot_id)
-            except KeyboardInterrupt:
-                    print('Good bye!')
-                    exit()
-            except requests.exceptions.Timeout as e:
-                e = str(e)
-                stderr_log(target,e)
-                bot_telegram('[-] Unexpected error: '+e,bot_token,bot_id)
-                pass
-            except requests.exceptions.InvalidURL as e:
-                e = str(e)
-                stderr_log(target,e)
-                bot_telegram('[-] Unexpected error: '+e,bot_token,bot_id)
-                pass
-            except Exception as e:
-                e = str(e)
-                stderr_log(target,e)
-                bot_telegram('[-] Unexpected error: '+e,bot_token,bot_id)
-                pass
-    else:
-        print('[+] Scan finished. Good bye!')
-        bot_telegram('[+] Scan finished. Good bye!',bot_token,bot_id)
-        exit()
+    run_scan(bot_token, bot_id, target_list, forwarded_headers, file_headers_dict)
+    print('[+] Scan finished. Good bye!')
+    bot_telegram('[+] Scan finished. Good bye!', bot_token, bot_id)
+    exit()
 else:
     print('[-] This app requires 2 variable environments (token and id) for Telegram notifications. Example: export bot_token=token / export bot_id=id')
     exit()
