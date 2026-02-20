@@ -130,6 +130,7 @@ def run_scan(
     - reporta cualquier status != 200
     - si llega 429: lo reporta y luego aborta
     - NO sigue redirects (para poder reportar 3xx siempre)
+    - NO pisa 'Host' si ya viene en base_headers (archivo)
     """
     with requests.Session() as session:
         for target in target_list:
@@ -142,7 +143,10 @@ def run_scan(
                     if not host_value:
                         host_value = target.split('/')[2]
 
-                    headers['Host'] = host_value
+                    # Solo setear Host si NO viene desde el archivo de headers
+                    if not headers.get('Host'):
+                        headers['Host'] = host_value
+
                     headers['Referer'] = target
                     headers[ssrf] = payload
 
@@ -158,7 +162,6 @@ def run_scan(
 
                     status_code = str(r.status_code)
 
-                    # Etiqueta simple por thresholds (útil para tu lab / time-delay)
                     if elapsed >= slow_threshold:
                         speed_tag = "SLOW"
                     elif elapsed <= fast_threshold:
@@ -166,10 +169,8 @@ def run_scan(
                     else:
                         speed_tag = "MID"
 
-                    # Prefijo consistente (igual idea que stdout_log)
                     prefix = "[!] Rate limit detected!" if status_code == '429' else "[!] Possible SSRF Found!"
 
-                    # Reportar todo lo que no sea 200
                     if status_code != '200':
                         stdout_log(status_code, ssrf, target, elapsed=elapsed)
                         bot_telegram(
@@ -182,7 +183,6 @@ def run_scan(
                             bot_token, bot_id
                         )
 
-                    # Si es 429, abortar DESPUÉS de reportar
                     if status_code == '429':
                         print('[-] Rate limit exception. Good bye!')
                         bot_telegram('[-] Scan aborted by 429 Rate limit.', bot_token, bot_id)
