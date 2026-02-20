@@ -30,7 +30,26 @@ parser.add_argument('--slow-threshold', type=float, default=5.0, help='Latency t
 
 args = parser.parse_args()
 
-forwarded_headers = ['Forwarded','X-Forwarded','X-Forwarded-Host','X-Forwarded-By','X-Forwarded-For','X-Forwarded-Server','X-Real-IP','X-Forwarded-Proto','X-Forwarded-For-Original','X-Forward-For','Forwarded-For-IP','X-Originating-IP','X-Forwarded-For-IP','X-Forwarded-Port','X-Remote-IP','X-Remote-Addr','X-Remote-Host','X-Server-Name','X-Client-IP','Client-Ip','X-Host','Origin','Access-Control-Allow-Origin','X-ProxyUser-Ip','X-Cluster-Client-Ip','CF-Connecting-IP','True-Client-IP','X-Backend-Host','X-BlueCoat-Via','X-Forwared-Host','X-From-IP','X-Gateway-Host','X-Ip','X-Original-Host','X-Original-IP','X-Original-Remote-Addr','X-Original-Url','X-Originally-Forwarded-For','X-ProxyMesh-IP','X-True-Client-IP','Proxy-Host','CF-ipcountry','Remote-addr','Remote-host','X-Backend-Server','HTTP-Host','Local-addr','X-CF-URL','Fastly-Client-IP','Home','Host-Name','Host-Liveserver','X-Client-Host','X-Clientip','X-Forwarder-For','X-Machine','X-Network-Info','X-Orig-Client','Xproxy','X-Proxy-Url','Clientip','Hosti','Incap-Client-Ip','X-User','X-Source-IP']
+forwarded_headers = ['Forwarded','X-Forwarded','X-Forwarded-Host','X-Forwarded-By','X-Forwarded-For','X-Forwarded-Server','X-Real-IP','X-Forwarded-Proto','X-Forwarded-For-Original','X-Forward-For','Forwarded-For-IP','X-Originating-IP','X-Forwarded-For-IP','X-Forwarded-Port','X-Remote-IP','X-Remote-Addr','X-Remote-Host','X-Server-Name','X-Client-IP','Client-Ip','X-Host','Origin','Access-Control-Allow-Origin','X-ProxyUser-Ip','X-Cluster-Client-Ip','CF-Connecting-IP','True-Client-IP','X-Backend-Host','X-BlueCoat-Via','X-From-IP','X-Gateway-Host','X-Ip','X-Original-Host','X-Original-IP','X-Original-Remote-Addr','X-Original-Url','X-Originally-Forwarded-For','X-ProxyMesh-IP','X-True-Client-IP','Proxy-Host','CF-ipcountry','Remote-addr','Remote-host','X-Backend-Server','HTTP-Host','Local-addr','X-CF-URL','Fastly-Client-IP','Home','Host-Name','Host-Liveserver','X-Client-Host','X-Clientip','X-Forwarder-For','X-Machine','X-Network-Info','X-Orig-Client','Xproxy','X-Proxy-Url','Clientip','Hosti','Incap-Client-Ip','X-User','X-Source-IP']
+
+def dedupe_headers_case_insensitive(headers_list):
+    """
+    Deduplica preservando el orden.
+    HTTP headers son case-insensitive, así que deduplica por .lower().
+    """
+    seen = set()
+    out = []
+    for h in headers_list:
+        if not h:
+            continue
+        key = h.strip().lower()
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        out.append(h.strip())
+    return out
+
+forwarded_headers = dedupe_headers_case_insensitive(forwarded_headers)
 
 def escape_markdown_v2(text: str) -> str:
     """
