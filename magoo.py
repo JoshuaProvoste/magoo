@@ -123,7 +123,8 @@ def run_scan(
     - headers = base_headers.copy() por request
     - mide elapsed con time.monotonic()
     - reusa conexiones con requests.Session()
-    - reporta cualquier status != 200 (excepto 429, que aborta)
+    - reporta cualquier status != 200
+    - si llega 429: lo reporta y luego aborta
     - NO sigue redirects (para poder reportar 3xx siempre)
     """
     session = requests.Session()
@@ -147,26 +148,23 @@ def run_scan(
                     url=target,
                     headers=headers,
                     verify=verify_tls,
-                    allow_redirects=False,   # <-- SIEMPRE FALSE
+                    allow_redirects=False,
                     timeout=timeout
                 )
                 elapsed = time.monotonic() - start
 
                 status_code = str(r.status_code)
 
-                if status_code == '429':
-                    print('[-] Rate limit exception. Good bye!')
-                    bot_telegram('[-] Scan aborted by 429 Rate limit.', bot_token, bot_id)
-                    exit()
+                # Etiqueta simple por thresholds (útil para tu lab / time-delay)
+                if elapsed >= slow_threshold:
+                    speed_tag = "SLOW"
+                elif elapsed <= fast_threshold:
+                    speed_tag = "FAST"
+                else:
+                    speed_tag = "MID"
 
+                # Reportar todo lo que no sea 200
                 if status_code != '200':
-                    if elapsed >= slow_threshold:
-                        speed_tag = "SLOW"
-                    elif elapsed <= fast_threshold:
-                        speed_tag = "FAST"
-                    else:
-                        speed_tag = "MID"
-
                     stdout_log(status_code, ssrf, target, elapsed=elapsed)
                     bot_telegram(
                         '[+] Status: ' + status_code +
@@ -177,9 +175,15 @@ def run_scan(
                         bot_token, bot_id
                     )
 
+                # Si es 429, abortar DESPUÉS de reportar
+                if status_code == '429':
+                    print('[-] Rate limit exception. Good bye!')
+                    bot_telegram('[-] Scan aborted by 429 Rate limit.', bot_token, bot_id)
+                    raise SystemExit(1)
+
             except KeyboardInterrupt:
                 print('Good bye!')
-                exit()
+                raise SystemExit(0)
 
             except requests.exceptions.RequestException as e:
                 e = str(e)
