@@ -75,10 +75,15 @@ def stderr_log(target, e):
         log.write(line)
     print(line.rstrip("\n"))
 def stdout_log(status_code, ssrf, target, elapsed=None):
-    if elapsed is not None:
-        line = f"[+] Status: {status_code} Elapsed: {elapsed:.3f}s Header: {ssrf} URL: {target}\n"
+    if status_code == '429':
+        prefix = "[!] Rate limit detected!"
     else:
-        line = f"[+] Status: {status_code} Header: {ssrf} URL: {target}\n"
+        prefix = "[+] Possible SSRF Found!"
+
+    if elapsed is not None:
+        line = f"{prefix} Status: {status_code} Elapsed: {elapsed:.3f}s Header: {ssrf} URL: {target}\n"
+    else:
+        line = f"{prefix} Status: {status_code} Header: {ssrf} URL: {target}\n"
 
     with open('stdout_log_ssrf.txt', 'a', encoding='utf-8', errors='replace') as log:
         log.write(line)
@@ -167,7 +172,7 @@ def run_scan(
                 if status_code != '200':
                     stdout_log(status_code, ssrf, target, elapsed=elapsed)
                     bot_telegram(
-                        '[+] Status: ' + status_code +
+                        '[+] Possible SSRF Found! Status: ' + status_code +
                         ' Elapsed: ' + f'{elapsed:.3f}' + 's' +
                         ' (' + speed_tag + ')' +
                         ' Header: ' + ssrf +
