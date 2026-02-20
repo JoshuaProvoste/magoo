@@ -4,6 +4,7 @@
 #Coded by https://twitter.com/JoshuaProvoste
 #Based on https://hackerone.com/reports/727330
 
+import time
 import os
 import requests
 import argparse
@@ -25,11 +26,16 @@ def stderr_log(target,e):
     log.write('[-] Unexpected error with this URL: '+target+' Error: '+e+'\n')
     log.close()
     return print('[-] Unexpected error with this URL: '+target+' Error: '+e)
-def stdout_log(status_code,ssrf,target):
+def stdout_log(status_code, ssrf, target, elapsed=None):
     log = open('stdout_log_ssrf.txt', 'a')
-    log.write('[+] Status: '+status_code+' Header: '+ssrf+' URL: '+target+'\n')
-    log.close()
-    return print('[+] Status: '+status_code+' Header: '+ssrf+' URL: '+target)
+    if elapsed is not None:
+        log.write('[+] Status: '+status_code+' Elapsed: '+f'{elapsed:.3f}'+'s Header: '+ssrf+' URL: '+target+'\n')
+        log.close()
+        return print('[+] Status: '+status_code+' Elapsed: '+f'{elapsed:.3f}'+'s Header: '+ssrf+' URL: '+target)
+    else:
+        log.write('[+] Status: '+status_code+' Header: '+ssrf+' URL: '+target+'\n')
+        log.close()
+        return print('[+] Status: '+status_code+' Header: '+ssrf+' URL: '+target)
 def load_headers_from_file(headers_path: str) -> dict:
     """
     Lee un archivo .txt con headers en formato:
@@ -63,17 +69,15 @@ def run_scan(bot_token, bot_id, target_list, forwarded_headers, base_headers):
     """
     Ejecuta el escaneo sin mutar el dict global de headers.
     En cada request crea un dict nuevo: headers = base_headers.copy()
+    Mide elapsed real por request con time.monotonic().
     """
     for target in target_list:
         for ssrf in forwarded_headers:
             try:
                 headers = base_headers.copy()
 
-                # Robust URL parsing (evita depender de split('/')[2])
                 parsed = urlsplit(target)
                 host_value = parsed.netloc
-
-                # Fallback por si viene una URL rara/sin esquema (no debería si ya las validaste)
                 if not host_value:
                     host_value = target.split('/')[2]
 
@@ -81,6 +85,7 @@ def run_scan(bot_token, bot_id, target_list, forwarded_headers, base_headers):
                 headers['Referer'] = target
                 headers[ssrf] = 'fake.tld'
 
+                start = time.monotonic()
                 r = requests.get(
                     url=target,
                     headers=headers,
@@ -88,6 +93,7 @@ def run_scan(bot_token, bot_id, target_list, forwarded_headers, base_headers):
                     allow_redirects=False,
                     timeout=5
                 )
+                elapsed = time.monotonic() - start
 
                 status_code = str(r.status_code)
 
@@ -102,8 +108,11 @@ def run_scan(bot_token, bot_id, target_list, forwarded_headers, base_headers):
                 elif status_code[0] == '4':
                     pass
                 else:
-                    stdout_log(status_code, ssrf, target)
-                    bot_telegram('[+] Status: '+status_code+' Header: '+ssrf+' URL: '+target, bot_token, bot_id)
+                    stdout_log(status_code, ssrf, target, elapsed=elapsed)
+                    bot_telegram(
+                        '[+] Status: '+status_code+' Elapsed: '+f'{elapsed:.3f}'+'s Header: '+ssrf+' URL: '+target,
+                        bot_token, bot_id
+                    )
 
             except KeyboardInterrupt:
                 print('Good bye!')
