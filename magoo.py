@@ -115,7 +115,7 @@ def load_headers_from_file(headers_path: str) -> dict:
 def run_scan(
     bot_token, bot_id,
     target_list, forwarded_headers, base_headers,
-    payload, timeout, verify_tls, follow_redirects,
+    payload, timeout, verify_tls,
     fast_threshold, slow_threshold
 ):
     """
@@ -124,8 +124,7 @@ def run_scan(
     - mide elapsed con time.monotonic()
     - reusa conexiones con requests.Session()
     - reporta cualquier status != 200 (excepto 429, que aborta)
-    - unifica excepciones de requests en RequestException
-    - parámetros CLI: payload/timeout/verify/follow_redirects/thresholds
+    - NO sigue redirects (para poder reportar 3xx siempre)
     """
     session = requests.Session()
 
@@ -148,7 +147,7 @@ def run_scan(
                     url=target,
                     headers=headers,
                     verify=verify_tls,
-                    allow_redirects=follow_redirects,
+                    allow_redirects=False,   # <-- SIEMPRE FALSE
                     timeout=timeout
                 )
                 elapsed = time.monotonic() - start
@@ -161,7 +160,6 @@ def run_scan(
                     exit()
 
                 if status_code != '200':
-                    # Etiqueta simple por thresholds (útil para tu lab / time-delay)
                     if elapsed >= slow_threshold:
                         speed_tag = "SLOW"
                     elif elapsed <= fast_threshold:
@@ -205,8 +203,6 @@ def main():
     tls_group.add_argument('--verify', action='store_true', help='Enable TLS certificate verification')
     tls_group.add_argument('--insecure', action='store_true', help='Disable TLS verification (default behavior)')
 
-    parser.add_argument('--follow-redirects', action='store_true', help='Follow redirects (default: False)')
-
     parser.add_argument('--fast-threshold', type=float, default=3.0, help='Latency threshold (s) considered FAST (default: 3)')
     parser.add_argument('--slow-threshold', type=float, default=5.0, help='Latency threshold (s) considered SLOW (default: 5)')
 
@@ -234,7 +230,7 @@ def main():
     run_scan(
         bot_token, bot_id,
         target_list, headers_to_fuzz, file_headers_dict,
-        args.payload, args.timeout, verify_tls, args.follow_redirects,
+        args.payload, args.timeout, verify_tls,
         args.fast_threshold, args.slow_threshold
     )
 
