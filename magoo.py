@@ -53,21 +53,20 @@ def bot_telegram(bot_message, bot_token, bot_id):
     except Exception:
         # No tumbar el scan si Telegram falla
         return None
-def stderr_log(target,e):
-    log = open('stderr_log_ssrf.txt', 'a')
-    log.write('[-] Unexpected error with this URL: '+target+' Error: '+e+'\n')
-    log.close()
-    return print('[-] Unexpected error with this URL: '+target+' Error: '+e)
+def stderr_log(target, e):
+    line = f"[-] Unexpected error with this URL: {target} Error: {e}\n"
+    with open('stderr_log_ssrf.txt', 'a', encoding='utf-8', errors='replace') as log:
+        log.write(line)
+    print(line.rstrip("\n"))
 def stdout_log(status_code, ssrf, target, elapsed=None):
-    log = open('stdout_log_ssrf.txt', 'a')
     if elapsed is not None:
-        log.write('[+] Status: '+status_code+' Elapsed: '+f'{elapsed:.3f}'+'s Header: '+ssrf+' URL: '+target+'\n')
-        log.close()
-        return print('[+] Status: '+status_code+' Elapsed: '+f'{elapsed:.3f}'+'s Header: '+ssrf+' URL: '+target)
+        line = f"[+] Status: {status_code} Elapsed: {elapsed:.3f}s Header: {ssrf} URL: {target}\n"
     else:
-        log.write('[+] Status: '+status_code+' Header: '+ssrf+' URL: '+target+'\n')
-        log.close()
-        return print('[+] Status: '+status_code+' Header: '+ssrf+' URL: '+target)
+        line = f"[+] Status: {status_code} Header: {ssrf} URL: {target}\n"
+
+    with open('stdout_log_ssrf.txt', 'a', encoding='utf-8', errors='replace') as log:
+        log.write(line)
+    print(line.rstrip("\n"))
 def load_headers_from_file(headers_path: str) -> dict:
     """
     Lee un archivo .txt con headers en formato:
