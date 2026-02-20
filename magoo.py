@@ -168,11 +168,15 @@ def run_scan(
                 else:
                     speed_tag = "MID"
 
+                # Prefijo consistente (igual idea que stdout_log)
+                prefix = "[!] Rate limit detected!" if status_code == '429' else "[!] Possible SSRF Found!"
+
                 # Reportar todo lo que no sea 200
                 if status_code != '200':
                     stdout_log(status_code, ssrf, target, elapsed=elapsed)
                     bot_telegram(
-                        '[+] Possible SSRF Found! Status: ' + status_code +
+                        prefix +
+                        ' Status: ' + status_code +
                         ' Elapsed: ' + f'{elapsed:.3f}' + 's' +
                         ' (' + speed_tag + ')' +
                         ' Header: ' + ssrf +
