@@ -9,7 +9,6 @@ import os
 import requests
 import argparse
 from urllib3.exceptions import InsecureRequestWarning
-requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
 from urllib.parse import urlsplit
 
 forwarded_headers = ['Forwarded','X-Forwarded','X-Forwarded-Host','X-Forwarded-By','X-Forwarded-For','X-Forwarded-Server','X-Real-IP','X-Forwarded-Proto','X-Forwarded-For-Original','X-Forward-For','Forwarded-For-IP','X-Originating-IP','X-Forwarded-For-IP','X-Forwarded-Port','X-Remote-IP','X-Remote-Addr','X-Remote-Host','X-Server-Name','X-Client-IP','Client-Ip','X-Host','Origin','Access-Control-Allow-Origin','X-ProxyUser-Ip','X-Cluster-Client-Ip','CF-Connecting-IP','True-Client-IP','X-Backend-Host','X-BlueCoat-Via','X-From-IP','X-Gateway-Host','X-Ip','X-Original-Host','X-Original-IP','X-Original-Remote-Addr','X-Original-Url','X-Originally-Forwarded-For','X-ProxyMesh-IP','X-True-Client-IP','Proxy-Host','CF-ipcountry','Remote-addr','Remote-host','X-Backend-Server','HTTP-Host','Local-addr','X-CF-URL','Fastly-Client-IP','Home','Host-Name','Host-Liveserver','X-Client-Host','X-Clientip','X-Forwarder-For','X-Machine','X-Network-Info','X-Orig-Client','Xproxy','X-Proxy-Url','Clientip','Hosti','Incap-Client-Ip','X-User','X-Source-IP']
@@ -132,77 +131,76 @@ def run_scan(
     - si llega 429: lo reporta y luego aborta
     - NO sigue redirects (para poder reportar 3xx siempre)
     """
-    session = requests.Session()
+    with requests.Session() as session:
+        for target in target_list:
+            for ssrf in forwarded_headers:
+                try:
+                    headers = base_headers.copy()
 
-    for target in target_list:
-        for ssrf in forwarded_headers:
-            try:
-                headers = base_headers.copy()
+                    parsed = urlsplit(target)
+                    host_value = parsed.netloc
+                    if not host_value:
+                        host_value = target.split('/')[2]
 
-                parsed = urlsplit(target)
-                host_value = parsed.netloc
-                if not host_value:
-                    host_value = target.split('/')[2]
+                    headers['Host'] = host_value
+                    headers['Referer'] = target
+                    headers[ssrf] = payload
 
-                headers['Host'] = host_value
-                headers['Referer'] = target
-                headers[ssrf] = payload
-
-                start = time.monotonic()
-                r = session.get(
-                    url=target,
-                    headers=headers,
-                    verify=verify_tls,
-                    allow_redirects=False,
-                    timeout=timeout
-                )
-                elapsed = time.monotonic() - start
-
-                status_code = str(r.status_code)
-
-                # Etiqueta simple por thresholds (útil para tu lab / time-delay)
-                if elapsed >= slow_threshold:
-                    speed_tag = "SLOW"
-                elif elapsed <= fast_threshold:
-                    speed_tag = "FAST"
-                else:
-                    speed_tag = "MID"
-
-                # Prefijo consistente (igual idea que stdout_log)
-                prefix = "[!] Rate limit detected!" if status_code == '429' else "[!] Possible SSRF Found!"
-
-                # Reportar todo lo que no sea 200
-                if status_code != '200':
-                    stdout_log(status_code, ssrf, target, elapsed=elapsed)
-                    bot_telegram(
-                        prefix +
-                        ' Status: ' + status_code +
-                        ' Elapsed: ' + f'{elapsed:.3f}' + 's' +
-                        ' (' + speed_tag + ')' +
-                        ' Header: ' + ssrf +
-                        ' URL: ' + target,
-                        bot_token, bot_id
+                    start = time.monotonic()
+                    r = session.get(
+                        url=target,
+                        headers=headers,
+                        verify=verify_tls,
+                        allow_redirects=False,
+                        timeout=timeout
                     )
+                    elapsed = time.monotonic() - start
 
-                # Si es 429, abortar DESPUÉS de reportar
-                if status_code == '429':
-                    print('[-] Rate limit exception. Good bye!')
-                    bot_telegram('[-] Scan aborted by 429 Rate limit.', bot_token, bot_id)
-                    raise SystemExit(1)
+                    status_code = str(r.status_code)
 
-            except KeyboardInterrupt:
-                print('Good bye!')
-                raise SystemExit(0)
+                    # Etiqueta simple por thresholds (útil para tu lab / time-delay)
+                    if elapsed >= slow_threshold:
+                        speed_tag = "SLOW"
+                    elif elapsed <= fast_threshold:
+                        speed_tag = "FAST"
+                    else:
+                        speed_tag = "MID"
 
-            except requests.exceptions.RequestException as e:
-                e = str(e)
-                stderr_log(target, e)
-                bot_telegram('[-] Unexpected error: ' + e, bot_token, bot_id)
+                    # Prefijo consistente (igual idea que stdout_log)
+                    prefix = "[!] Rate limit detected!" if status_code == '429' else "[!] Possible SSRF Found!"
 
-            except Exception as e:
-                e = str(e)
-                stderr_log(target, e)
-                bot_telegram('[-] Unexpected error: ' + e, bot_token, bot_id)
+                    # Reportar todo lo que no sea 200
+                    if status_code != '200':
+                        stdout_log(status_code, ssrf, target, elapsed=elapsed)
+                        bot_telegram(
+                            prefix +
+                            ' Status: ' + status_code +
+                            ' Elapsed: ' + f'{elapsed:.3f}' + 's' +
+                            ' (' + speed_tag + ')' +
+                            ' Header: ' + ssrf +
+                            ' URL: ' + target,
+                            bot_token, bot_id
+                        )
+
+                    # Si es 429, abortar DESPUÉS de reportar
+                    if status_code == '429':
+                        print('[-] Rate limit exception. Good bye!')
+                        bot_telegram('[-] Scan aborted by 429 Rate limit.', bot_token, bot_id)
+                        raise SystemExit(1)
+
+                except KeyboardInterrupt:
+                    print('Good bye!')
+                    raise SystemExit(0)
+
+                except requests.exceptions.RequestException as e:
+                    e = str(e)
+                    stderr_log(target, e)
+                    bot_telegram('[-] Unexpected error: ' + e, bot_token, bot_id)
+
+                except Exception as e:
+                    e = str(e)
+                    stderr_log(target, e)
+                    bot_telegram('[-] Unexpected error: ' + e, bot_token, bot_id)
 
 def main():
     parser = argparse.ArgumentParser()
@@ -212,9 +210,10 @@ def main():
     parser.add_argument('--timeout', type=float, default=5.0, help='Request timeout in seconds (default: 5)')
     parser.add_argument('--payload', type=str, default='fake.tld', help='Payload value to inject in forwarded headers (default: fake.tld)')
 
+    # TLS flags (default: verify=True). --verify se mantiene por compatibilidad.
     tls_group = parser.add_mutually_exclusive_group()
-    tls_group.add_argument('--verify', action='store_true', help='Enable TLS certificate verification')
-    tls_group.add_argument('--insecure', action='store_true', help='Disable TLS verification (default behavior)')
+    tls_group.add_argument('--verify', action='store_true', help='(Deprecated) TLS verification is enabled by default')
+    tls_group.add_argument('--insecure', action='store_true', help='Disable TLS certificate verification')
 
     parser.add_argument('--fast-threshold', type=float, default=3.0, help='Latency threshold (s) considered FAST (default: 3)')
     parser.add_argument('--slow-threshold', type=float, default=5.0, help='Latency threshold (s) considered SLOW (default: 5)')
@@ -228,6 +227,13 @@ def main():
         print('[-] This app requires 2 variable environments (token and id) for Telegram notifications. Example: export bot_token=token / export bot_id=id')
         return 1
 
+    # Default seguro: verify=True, a menos que --insecure
+    verify_tls = not args.insecure
+
+    # Silenciar warnings SOLO si estamos en insecure
+    if not verify_tls:
+        requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
+
     # headers base (desde archivo)
     file_headers_dict = load_headers_from_file(args.headers)
 
@@ -235,10 +241,7 @@ def main():
     with open(args.target, 'r', encoding='utf-8', errors='replace') as f:
         target_list = [x.strip() for x in f if x.strip()]
 
-    # dedupe (por si hay repetidos/variantes)
     headers_to_fuzz = forwarded_headers
-
-    verify_tls = True if args.verify else False  # default = False (insecure), como antes
 
     run_scan(
         bot_token, bot_id,
