@@ -9,6 +9,7 @@ import requests
 import argparse
 from urllib3.exceptions import InsecureRequestWarning
 requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
+from urllib.parse import urlsplit
 
 parser = argparse.ArgumentParser()
 parser.add_argument('-H','--headers', type=str, required=True, help='Readable file with custom HTTP headers for browser and session emulation')
@@ -67,7 +68,16 @@ def run_scan(bot_token, bot_id, target_list, forwarded_headers, base_headers):
         for ssrf in forwarded_headers:
             try:
                 headers = base_headers.copy()
-                headers['Host'] = target.split('/')[2]
+
+                # Robust URL parsing (evita depender de split('/')[2])
+                parsed = urlsplit(target)
+                host_value = parsed.netloc
+
+                # Fallback por si viene una URL rara/sin esquema (no debería si ya las validaste)
+                if not host_value:
+                    host_value = target.split('/')[2]
+
+                headers['Host'] = host_value
                 headers['Referer'] = target
                 headers[ssrf] = 'fake.tld'
 
