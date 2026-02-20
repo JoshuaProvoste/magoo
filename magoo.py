@@ -29,18 +29,39 @@ def stdout_log(status_code,ssrf,target):
     log.write('[+] Status: '+status_code+' Header: '+ssrf+' URL: '+target+'\n')
     log.close()
     return print('[+] Status: '+status_code+' Header: '+ssrf+' URL: '+target)
+def load_headers_from_file(headers_path: str) -> dict:
+    """
+    Lee un archivo .txt con headers en formato:
+      Header-Name: value
+    - Soporta valores con ':' (usa partition / split 1 vez)
+    - NO elimina espacios internos del valor (solo strip)
+    - Ignora líneas vacías o sin ':'
+    """
+    headers = {}
+    with open(headers_path, 'r', encoding='utf-8', errors='replace') as f:
+        for raw_line in f:
+            line = raw_line.strip()
+            if not line or ":" not in line:
+                continue
+
+            name, sep, value = line.partition(":")
+            if sep != ":":
+                continue
+
+            name = name.strip()
+            value = value.strip()
+
+            if not name:
+                continue
+
+            headers[name] = value
+
+    return headers
 
 bot_token = os.environ.get('bot_token')
 bot_id = os.environ.get('bot_id')
 
-file_headers = open(args.headers,'r').readlines()
-file_headers = [x.strip().replace(' ','') for x in file_headers if x and ":" in x]
-file_headers_dict = {}
-
-for file_header in file_headers:
-    h = file_header.split(':')[0]
-    v = file_header.split(':')[1]
-    file_headers_dict.update({h:v})
+file_headers_dict = load_headers_from_file(args.headers)
 
 forwarded_headers = ['Forwarded','X-Forwarded','X-Forwarded-Host','X-Forwarded-By','X-Forwarded-For','X-Forwarded-Server','X-Real-IP','X-Forwarded-Proto','X-Forwarded-For-Original','X-Forward-For','Forwarded-For-IP','X-Originating-IP','X-Forwarded-For-IP','X-Forwarded-Port','X-Remote-IP','X-Remote-Addr','X-Remote-Host','X-Server-Name','X-Client-IP','Client-Ip','X-Host','Origin','Access-Control-Allow-Origin','X-ProxyUser-Ip','X-Cluster-Client-Ip','CF-Connecting-IP','True-Client-IP','X-Backend-Host','X-BlueCoat-Via','X-Forwared-Host','X-From-IP','X-Gateway-Host','X-Ip','X-Original-Host','X-Original-IP','X-Original-Remote-Addr','X-Original-Url','X-Originally-Forwarded-For','X-ProxyMesh-IP','X-True-Client-IP','Proxy-Host','CF-ipcountry','Remote-addr','Remote-host','X-Backend-Server','HTTP-Host','Local-addr','X-CF-URL','Fastly-Client-IP','Home','Host-Name','Host-Liveserver','X-Client-Host','X-Clientip','X-Forwarder-For','X-Machine','X-Network-Info','X-Orig-Client','Xproxy','X-Proxy-Url','Clientip','Hosti','Incap-Client-Ip','X-User','X-Source-IP']
 
