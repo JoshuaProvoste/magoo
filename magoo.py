@@ -70,7 +70,10 @@ def run_scan(bot_token, bot_id, target_list, forwarded_headers, base_headers):
     Ejecuta el escaneo sin mutar el dict global de headers.
     En cada request crea un dict nuevo: headers = base_headers.copy()
     Mide elapsed real por request con time.monotonic().
+    Reusa conexiones con requests.Session().
     """
+    session = requests.Session()
+
     for target in target_list:
         for ssrf in forwarded_headers:
             try:
@@ -86,7 +89,7 @@ def run_scan(bot_token, bot_id, target_list, forwarded_headers, base_headers):
                 headers[ssrf] = 'fake.tld'
 
                 start = time.monotonic()
-                r = requests.get(
+                r = session.get(
                     url=target,
                     headers=headers,
                     verify=False,
