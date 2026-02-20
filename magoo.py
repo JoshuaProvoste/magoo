@@ -15,6 +15,19 @@ from urllib.parse import urlsplit
 parser = argparse.ArgumentParser()
 parser.add_argument('-H','--headers', type=str, required=True, help='Readable file with custom HTTP headers for browser and session emulation')
 parser.add_argument('-T','--target', type=str, required=True, help='Readable file with multiple URLs previously validated')
+
+parser.add_argument('--timeout', type=float, default=5.0, help='Request timeout in seconds (default: 5)')
+parser.add_argument('--payload', type=str, default='fake.tld', help='Payload value to inject in forwarded headers (default: fake.tld)')
+
+tls_group = parser.add_mutually_exclusive_group()
+tls_group.add_argument('--verify', action='store_true', help='Enable TLS certificate verification')
+tls_group.add_argument('--insecure', action='store_true', help='Disable TLS verification (default behavior)')
+
+parser.add_argument('--follow-redirects', action='store_true', help='Follow redirects (default: False)')
+
+parser.add_argument('--fast-threshold', type=float, default=3.0, help='Latency threshold (s) considered FAST (default: 3)')
+parser.add_argument('--slow-threshold', type=float, default=5.0, help='Latency threshold (s) considered SLOW (default: 5)')
+
 args = parser.parse_args()
 
 forwarded_headers = ['Forwarded','X-Forwarded','X-Forwarded-Host','X-Forwarded-By','X-Forwarded-For','X-Forwarded-Server','X-Real-IP','X-Forwarded-Proto','X-Forwarded-For-Original','X-Forward-For','Forwarded-For-IP','X-Originating-IP','X-Forwarded-For-IP','X-Forwarded-Port','X-Remote-IP','X-Remote-Addr','X-Remote-Host','X-Server-Name','X-Client-IP','Client-Ip','X-Host','Origin','Access-Control-Allow-Origin','X-ProxyUser-Ip','X-Cluster-Client-Ip','CF-Connecting-IP','True-Client-IP','X-Backend-Host','X-BlueCoat-Via','X-Forwared-Host','X-From-IP','X-Gateway-Host','X-Ip','X-Original-Host','X-Original-IP','X-Original-Remote-Addr','X-Original-Url','X-Originally-Forwarded-For','X-ProxyMesh-IP','X-True-Client-IP','Proxy-Host','CF-ipcountry','Remote-addr','Remote-host','X-Backend-Server','HTTP-Host','Local-addr','X-CF-URL','Fastly-Client-IP','Home','Host-Name','Host-Liveserver','X-Client-Host','X-Clientip','X-Forwarder-For','X-Machine','X-Network-Info','X-Orig-Client','Xproxy','X-Proxy-Url','Clientip','Hosti','Incap-Client-Ip','X-User','X-Source-IP']
@@ -98,7 +111,12 @@ def load_headers_from_file(headers_path: str) -> dict:
 
     return headers
 
-def run_scan(bot_token, bot_id, target_list, forwarded_headers, base_headers):
+def run_scan(
+    bot_token, bot_id,
+    target_list, forwarded_headers, base_headers,
+    payload, timeout, verify_tls, follow_redirects,
+    fast_threshold, slow_threshold
+):
     """
     Ejecuta el escaneo sin mutar el dict global de headers.
     - headers = base_headers.copy() por request
@@ -106,6 +124,7 @@ def run_scan(bot_token, bot_id, target_list, forwarded_headers, base_headers):
     - reusa conexiones con requests.Session()
     - reporta cualquier status != 200 (excepto 429, que aborta)
     - unifica excepciones de requests en RequestException
+    - parámetros CLI: payload/timeout/verify/follow_redirects/thresholds
     """
     session = requests.Session()
 
@@ -121,15 +140,15 @@ def run_scan(bot_token, bot_id, target_list, forwarded_headers, base_headers):
 
                 headers['Host'] = host_value
                 headers['Referer'] = target
-                headers[ssrf] = 'fake.tld'
+                headers[ssrf] = payload
 
                 start = time.monotonic()
                 r = session.get(
                     url=target,
                     headers=headers,
-                    verify=False,
-                    allow_redirects=False,
-                    timeout=5
+                    verify=verify_tls,
+                    allow_redirects=follow_redirects,
+                    timeout=timeout
                 )
                 elapsed = time.monotonic() - start
 
@@ -141,10 +160,19 @@ def run_scan(bot_token, bot_id, target_list, forwarded_headers, base_headers):
                     exit()
 
                 if status_code != '200':
+                    # Etiqueta simple por thresholds (útil para tu lab / time-delay)
+                    if elapsed >= slow_threshold:
+                        speed_tag = "SLOW"
+                    elif elapsed <= fast_threshold:
+                        speed_tag = "FAST"
+                    else:
+                        speed_tag = "MID"
+
                     stdout_log(status_code, ssrf, target, elapsed=elapsed)
                     bot_telegram(
                         '[+] Status: ' + status_code +
                         ' Elapsed: ' + f'{elapsed:.3f}' + 's' +
+                        ' (' + speed_tag + ')' +
                         ' Header: ' + ssrf +
                         ' URL: ' + target,
                         bot_token, bot_id
@@ -160,7 +188,6 @@ def run_scan(bot_token, bot_id, target_list, forwarded_headers, base_headers):
                 bot_telegram('[-] Unexpected error: ' + e, bot_token, bot_id)
 
             except Exception as e:
-                # “cualquier otra cosa” (bugs de código, edge-cases raros)
                 e = str(e)
                 stderr_log(target, e)
                 bot_telegram('[-] Unexpected error: ' + e, bot_token, bot_id)
@@ -174,7 +201,13 @@ target_list = open(args.target,'r').readlines()
 target_list = [x.strip() for x in target_list]
 
 if (bot_token != None and bot_id != None):
-    run_scan(bot_token, bot_id, target_list, forwarded_headers, file_headers_dict)
+    verify_tls = True if args.verify else False  # default mantiene verify=False como tu script actual
+    run_scan(
+        bot_token, bot_id,
+        target_list, forwarded_headers, file_headers_dict,
+        args.payload, args.timeout, verify_tls, args.follow_redirects,
+        args.fast_threshold, args.slow_threshold
+    )
     print('[+] Scan finished. Good bye!')
     bot_telegram('[+] Scan finished. Good bye!', bot_token, bot_id)
     exit()
