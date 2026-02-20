@@ -17,6 +17,8 @@ parser.add_argument('-H','--headers', type=str, required=True, help='Readable fi
 parser.add_argument('-T','--target', type=str, required=True, help='Readable file with multiple URLs previously validated')
 args = parser.parse_args()
 
+forwarded_headers = ['Forwarded','X-Forwarded','X-Forwarded-Host','X-Forwarded-By','X-Forwarded-For','X-Forwarded-Server','X-Real-IP','X-Forwarded-Proto','X-Forwarded-For-Original','X-Forward-For','Forwarded-For-IP','X-Originating-IP','X-Forwarded-For-IP','X-Forwarded-Port','X-Remote-IP','X-Remote-Addr','X-Remote-Host','X-Server-Name','X-Client-IP','Client-Ip','X-Host','Origin','Access-Control-Allow-Origin','X-ProxyUser-Ip','X-Cluster-Client-Ip','CF-Connecting-IP','True-Client-IP','X-Backend-Host','X-BlueCoat-Via','X-Forwared-Host','X-From-IP','X-Gateway-Host','X-Ip','X-Original-Host','X-Original-IP','X-Original-Remote-Addr','X-Original-Url','X-Originally-Forwarded-For','X-ProxyMesh-IP','X-True-Client-IP','Proxy-Host','CF-ipcountry','Remote-addr','Remote-host','X-Backend-Server','HTTP-Host','Local-addr','X-CF-URL','Fastly-Client-IP','Home','Host-Name','Host-Liveserver','X-Client-Host','X-Clientip','X-Forwarder-For','X-Machine','X-Network-Info','X-Orig-Client','Xproxy','X-Proxy-Url','Clientip','Hosti','Incap-Client-Ip','X-User','X-Source-IP']
+
 def escape_markdown_v2(text: str) -> str:
     """
     Escapa caracteres especiales para Telegram parse_mode=MarkdownV2.
@@ -102,6 +104,7 @@ def run_scan(bot_token, bot_id, target_list, forwarded_headers, base_headers):
     En cada request crea un dict nuevo: headers = base_headers.copy()
     Mide elapsed real por request con time.monotonic().
     Reusa conexiones con requests.Session().
+    Reporta cualquier status != 200 (excepto 429, que aborta).
     """
     session = requests.Session()
 
@@ -131,20 +134,20 @@ def run_scan(bot_token, bot_id, target_list, forwarded_headers, base_headers):
 
                 status_code = str(r.status_code)
 
+                # Mantener comportamiento especial de rate limit
                 if status_code == '429':
                     print('[-] Rate limit exception. Good bye!')
                     bot_telegram('[-] Scan aborted by 429 Rate limit.', bot_token, bot_id)
                     exit()
-                elif status_code[0] == '2':
-                    pass
-                elif status_code[0] == '3':
-                    pass
-                elif status_code[0] == '4':
-                    pass
-                else:
+
+                # Reportar TODO lo que no sea 200
+                if status_code != '200':
                     stdout_log(status_code, ssrf, target, elapsed=elapsed)
                     bot_telegram(
-                        '[+] Status: '+status_code+' Elapsed: '+f'{elapsed:.3f}'+'s Header: '+ssrf+' URL: '+target,
+                        '[+] Status: ' + status_code +
+                        ' Elapsed: ' + f'{elapsed:.3f}' + 's' +
+                        ' Header: ' + ssrf +
+                        ' URL: ' + target,
                         bot_token, bot_id
                     )
 
@@ -171,8 +174,6 @@ bot_token = os.environ.get('bot_token')
 bot_id = os.environ.get('bot_id')
 
 file_headers_dict = load_headers_from_file(args.headers)
-
-forwarded_headers = ['Forwarded','X-Forwarded','X-Forwarded-Host','X-Forwarded-By','X-Forwarded-For','X-Forwarded-Server','X-Real-IP','X-Forwarded-Proto','X-Forwarded-For-Original','X-Forward-For','Forwarded-For-IP','X-Originating-IP','X-Forwarded-For-IP','X-Forwarded-Port','X-Remote-IP','X-Remote-Addr','X-Remote-Host','X-Server-Name','X-Client-IP','Client-Ip','X-Host','Origin','Access-Control-Allow-Origin','X-ProxyUser-Ip','X-Cluster-Client-Ip','CF-Connecting-IP','True-Client-IP','X-Backend-Host','X-BlueCoat-Via','X-Forwared-Host','X-From-IP','X-Gateway-Host','X-Ip','X-Original-Host','X-Original-IP','X-Original-Remote-Addr','X-Original-Url','X-Originally-Forwarded-For','X-ProxyMesh-IP','X-True-Client-IP','Proxy-Host','CF-ipcountry','Remote-addr','Remote-host','X-Backend-Server','HTTP-Host','Local-addr','X-CF-URL','Fastly-Client-IP','Home','Host-Name','Host-Liveserver','X-Client-Host','X-Clientip','X-Forwarder-For','X-Machine','X-Network-Info','X-Orig-Client','Xproxy','X-Proxy-Url','Clientip','Hosti','Incap-Client-Ip','X-User','X-Source-IP']
 
 target_list = open(args.target,'r').readlines()
 target_list = [x.strip() for x in target_list]
