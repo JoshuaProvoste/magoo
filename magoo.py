@@ -101,10 +101,11 @@ def load_headers_from_file(headers_path: str) -> dict:
 def run_scan(bot_token, bot_id, target_list, forwarded_headers, base_headers):
     """
     Ejecuta el escaneo sin mutar el dict global de headers.
-    En cada request crea un dict nuevo: headers = base_headers.copy()
-    Mide elapsed real por request con time.monotonic().
-    Reusa conexiones con requests.Session().
-    Reporta cualquier status != 200 (excepto 429, que aborta).
+    - headers = base_headers.copy() por request
+    - mide elapsed con time.monotonic()
+    - reusa conexiones con requests.Session()
+    - reporta cualquier status != 200 (excepto 429, que aborta)
+    - unifica excepciones de requests en RequestException
     """
     session = requests.Session()
 
@@ -134,13 +135,11 @@ def run_scan(bot_token, bot_id, target_list, forwarded_headers, base_headers):
 
                 status_code = str(r.status_code)
 
-                # Mantener comportamiento especial de rate limit
                 if status_code == '429':
                     print('[-] Rate limit exception. Good bye!')
                     bot_telegram('[-] Scan aborted by 429 Rate limit.', bot_token, bot_id)
                     exit()
 
-                # Reportar TODO lo que no sea 200
                 if status_code != '200':
                     stdout_log(status_code, ssrf, target, elapsed=elapsed)
                     bot_telegram(
@@ -154,21 +153,17 @@ def run_scan(bot_token, bot_id, target_list, forwarded_headers, base_headers):
             except KeyboardInterrupt:
                 print('Good bye!')
                 exit()
-            except requests.exceptions.Timeout as e:
+
+            except requests.exceptions.RequestException as e:
                 e = str(e)
                 stderr_log(target, e)
                 bot_telegram('[-] Unexpected error: ' + e, bot_token, bot_id)
-                pass
-            except requests.exceptions.InvalidURL as e:
-                e = str(e)
-                stderr_log(target, e)
-                bot_telegram('[-] Unexpected error: ' + e, bot_token, bot_id)
-                pass
+
             except Exception as e:
+                # “cualquier otra cosa” (bugs de código, edge-cases raros)
                 e = str(e)
                 stderr_log(target, e)
                 bot_telegram('[-] Unexpected error: ' + e, bot_token, bot_id)
-                pass
 
 bot_token = os.environ.get('bot_token')
 bot_id = os.environ.get('bot_id')
