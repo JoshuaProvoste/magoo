@@ -99,7 +99,7 @@ def probe():
     if status == 302:
         # Construimos una URL de demo, como en el reporte
         # (nota: no validamos si custom es dominio o IP; es un lab)
-        resp.headers["Location"] = f"https://{custom}/files-pri/demo.png"
+        resp.headers["Location"] = f"http://{custom}/files-pri/demo.png"
 
     return resp
 
